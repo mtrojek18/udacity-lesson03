@@ -15,14 +15,26 @@ provider:
 
   environment:
     GROUPS_TABLE: Groups-${self:provider.stage}
+    IMAGES_TABLE: Images-${self:provider.stage}
+    IMAGE_ID_INDEX: ImageIdIndex
 
-  iamRolesStatements:
+  iamRoleStatements:
     - Effect: Allow
       Action:
         - dynamodb:Scan
         - dynamodb:PutItem
+        - dynamodb:GetItem
         - dynamodb:Query
       Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.GROUPS_TABLE}
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:PutItem
+      Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+      Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}/index/${self:provider.environment.IMAGE_ID_INDEX}
 
 custom:
   documentation:
@@ -35,6 +47,11 @@ custom:
       - name: GroupRequest
         contentType: application/json
         schema: ${file(models/create-group-request.json)}
+      - name: ImageRequest
+        contentType: application/json
+        schema: ${file(models/create-image-request.json)}
+  webpack:
+    includeModules: true
 
 functions:
   GetGroups:
@@ -43,6 +60,22 @@ functions:
       - http:
           method: get
           path: groups
+          cors: true
+
+  GetImages:
+    handler: src/lambda/http/getImages.handler
+    events:
+      - http:
+          method: get
+          path: groups/{groupId}/images
+          cors: true
+
+  GetImage:
+    handler: src/lambda/http/getImage.handler
+    events:
+      - http:
+          method: get
+          path: images/{imageId}
           cors: true
 
   CreateGroup:
@@ -55,9 +88,23 @@ functions:
           reqValidatorName: RequestBodyValidator
           documentation:
             summary: Create a new group
-            description: Create a new group V2
+            description: Create a new group
             requestModels:
               "application/json": GroupRequest
+
+  CreateImage:
+    handler: src/lambda/http/createImage.handler
+    events:
+      - http:
+          method: post
+          path: groups/{groupId}/images
+          cors: true
+          reqValidatorName: RequestBodyValidator
+          documentation:
+            summary: Create a new image
+            description: Create a new image
+            requestModels:
+              "application/json": ImageRequest
 
 resources:
   Resources:
@@ -81,3 +128,28 @@ resources:
             KeyType: HASH
         BillingMode: PAY_PER_REQUEST
         TableName: ${self:provider.environment.GROUPS_TABLE}
+
+    ImagesDynamoDBTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: groupId
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+          - AttributeName: imageId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: groupId
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.IMAGES_TABLE}
+        GlobalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.IMAGE_ID_INDEX}
+            KeySchema:
+              - AttributeName: imageId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
