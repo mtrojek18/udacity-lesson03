@@ -5,8 +5,19 @@ plugins:
   - serverless-webpack
   - serverless-reqvalidator-plugin
   - serverless-aws-documentation
+  - serverless-plugin-canary-deployments
+  - serverless-iam-roles-per-function
+  - serverless-dynamodb-local
+  - serverless-offline
+
+package:
+  individually: true
 
 provider:
+  tracing:
+    lambda: true
+    apiGateway: true
+
   name: aws
   runtime: nodejs10.x
 
@@ -64,9 +75,26 @@ provider:
       Action:
         - kms:Decrypt
       Resource: !GetAtt KMSKey.Arn
+    - Effect: Allow
+      Action:
+        - codedeploy:*
+      Resource:
+        - "*"
 
 custom:
   topicName: imagesTopic-${self:provider.stage}
+
+  serverless-offline:
+    port: 3002
+
+  dynamodb:
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+    stages:
+      - dev
+
   documentation:
     api:
       info:
@@ -105,6 +133,15 @@ functions:
           method: get
           path: groups/{groupId}/images
           cors: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:GetItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.GROUPS_TABLE}
 
   GetImage:
     handler: src/lambda/http/getImage.handler
@@ -128,6 +165,9 @@ functions:
             description: Create a new group
             requestModels:
               "application/json": GroupRequest
+    deploymentSettings:
+      type: Linear10PercentEvery1Minute
+      alias: Live
 
   CreateImage:
     handler: src/lambda/http/createImage.handler
